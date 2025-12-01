@@ -112,7 +112,7 @@ if __name__ == '__main__':
        num_classes = 8 #0-7
        label_col = "uceis_score"
        df_gt = df_gt[[id_col_gt, label_col]]
-       df_gt[label_col] = df_gt[label_col].replace({'UCEIS-0': 0, 'UCEIS-1': 1, 'UCEIS-2': 2, 'UCEIS-3': 3, 'UCEIS-4': 4, 'UCEIS-5': 5, 'UCEIS-6': 6, 'UCEIS-7': 7})
+       df_gt[label_col] = df_gt[label_col].replace({'UCEIS-0': 0, 'UCEIS-1': 1, 'UCEIS-2': 2, 'UCEIS-3': 3, 'UCEIS-4': 4, 'UCEIS-5': 5, 'UCEIS-6': 6, 'UCEIS-7': 7, 'UCEIS-8': 8})
        exists = os.path.isfile(valArgs.predFile) 
 
        if exists:
@@ -120,7 +120,7 @@ if __name__ == '__main__':
             print("Prediction file columns:", df_pred.columns.tolist())
             id_col_pred = "id"
             df_pred = df_pred[[id_col_pred, label_col]] 
-            df_pred[label_col] = df_pred[label_col].replace({'UCEIS-0': 0, 'UCEIS-1': 1, 'UCEIS-2': 2, 'UCEIS-3': 3, 'UCEIS-4': 4, 'UCEIS-5': 5, 'UCEIS-6': 6, 'UCEIS-7': 7})
+            df_pred[label_col] = df_pred[label_col].replace({'UCEIS-0': 0, 'UCEIS-1': 1, 'UCEIS-2': 2, 'UCEIS-3': 3, 'UCEIS-4': 4, 'UCEIS-5': 5, 'UCEIS-6': 6, 'UCEIS-7': 7, 'UCEIS-8': 8})
             print(df_pred)  
     
             # Merge using the ID column UCEIS-1
@@ -154,19 +154,17 @@ if __name__ == '__main__':
         df_pred = df_pred[["id", pred_caption_col]]
 
         # Merge on ID
-        df = pd.merge(df_gt, df_pred, left_on=label_col_Captions, right_on=pred_caption_col, suffixes=("_gt", "_pred"))
-        print(df)
+        df = pd.merge(df_gt, df_pred, left_on="id", right_on="id", suffixes=("_gt", "_pred"))
+        
+        # print(df)
         # Initialize ROUGE scorer
         scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
-
-
         # Store results
         results = []   
         for _, row in df.iterrows():
             print(str(row[label_col_Captions]).strip())
             gt = str(row[label_col_Captions]).strip()
             pred = str(row[pred_caption_col]).strip()
-
             # -----------------------------
             # Cosine similarity (TF-IDF)
             # -----------------------------
@@ -175,13 +173,13 @@ if __name__ == '__main__':
             cos_sim = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
 
             print(cos_sim)
-
+            
             # -----------------------------
             # BLEU scores (BLEU-1 → BLEU-4)
             # pip install --upgrade nltk
             # -----------------------------
-            print([gt.split()])
-            print(pred.split())
+            # print([gt.split()])
+            # print(pred.split())
 
             # BLEU-1 (unigram)
             bleu1 = sentence_bleu([gt.split()], pred.split(), weights=(1, 0, 0, 0), smoothing_function=SmoothingFunction().method1)
@@ -205,7 +203,7 @@ if __name__ == '__main__':
             # METEOR score
             # -----------------------------
             meteor = meteor_score([gt.split()], pred.split())
-            print(meteor)
+            # print(meteor)
 
             # -----------------------------
             # ROUGE scores
@@ -236,6 +234,7 @@ if __name__ == '__main__':
 
         print("\n===== Average Metrics =====\n")
         mean_metrics = df_results.mean(numeric_only=True)
+        print('caption mean metric values:', mean_metrics)
         mean_metrics.to_csv("Captioning_Metrics_Output_mean.csv", header=False)
 
         # output_file_mean = "Captioning_Metrics_Output_mean.csv"
@@ -262,11 +261,25 @@ f1_macro = f1_score(y_true, y_pred, average="macro")
 # ---------------------------------------------------------
 # 3. MULTICLASS AUC (macro)
 # ---------------------------------------------------------
-y_true_oh = pd.get_dummies(y_true)
-y_pred_oh = pd.get_dummies(y_pred)
+# 1. Define the full list of required columns (e.g., [0, 1, 2, 3] for MES)
+all_classes = list(range(num_classes))
 
-auc_macro = roc_auc_score(y_true_oh, y_pred_oh, average="macro")
+# 2. Convert to one-hot, then reindex to ensure all columns exist.
+#    fill_value=0 is crucial to set missing class columns to 0.
+y_true_oh = pd.get_dummies(y_true).reindex(columns=all_classes, fill_value=0)
+y_pred_oh = pd.get_dummies(y_pred).reindex(columns=all_classes, fill_value=0)
 
+# 3. Ensure the column order is identical and numerical for roc_auc_score
+#    (The reindex step already aligns the columns, but this step confirms the data type)
+y_true_oh = y_true_oh[all_classes]
+y_pred_oh = y_pred_oh[all_classes]
+
+try:
+    auc_macro = roc_auc_score(y_true_oh, y_pred_oh, average="macro")
+except ValueError:
+    auc_macro = float('nan')
+
+# 4. Calculate AUC (y_true_oh and y_pred_oh now have the exact same columns)
 sensitivity, specificity, ppv = metrics_endouc(y_true, y_pred)
 
 # ---------------------------------------------------------
